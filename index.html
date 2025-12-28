@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Offline Journal</title>
+<title>Journal</title>
 
 <style>
 body {
@@ -13,51 +13,81 @@ body {
 }
 
 header {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
   padding: 10px;
   background: #1f1f1f;
-  align-items: center;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
-input {
-  background: #222;
-  color: #eee;
-  border: none;
+header input {
   padding: 6px;
   border-radius: 4px;
+  border: none;
+  background: #222;
+  color: #eee;
 }
 
-button {
+header button {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 4px;
   background: #333;
   color: #eee;
-  border: none;
-  padding: 6px 10px;
-  border-radius: 4px;
   cursor: pointer;
 }
 
-button.active {
-  background: #007acc;
+header button:hover {
+  background: #444;
 }
 
 #tabBar {
   display: flex;
   gap: 5px;
   padding: 10px;
+  background: #181818;
   flex-wrap: wrap;
+}
+
+.tab {
+  background: #333;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.tab.active {
+  background: #007acc;
+}
+
+.tab span {
+  font-size: 14px;
+}
+
+.tab button {
+  background: none;
+  border: none;
+  color: #ccc;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.tab button:hover {
+  color: #fff;
 }
 
 textarea {
   width: 100%;
-  height: 75vh;
-  background: #222;
-  color: #eee;
+  height: calc(100vh - 120px);
   border: none;
   padding: 10px;
+  background: #222;
+  color: #eee;
   resize: none;
-  font-size: 14px;
+  box-sizing: border-box;
 }
 </style>
 </head>
@@ -66,94 +96,105 @@ textarea {
 
 <header>
   <input id="newTabName" placeholder="New tab name">
-  <button id="addTabBtn">Add Tab</button>
-  <button id="exportBtn">Export</button>
+  <button onclick="addTab()">Add Tab</button>
+  <button onclick="exportAll()">Export</button>
 </header>
 
 <div id="tabBar"></div>
 <textarea id="editor"></textarea>
 
 <script>
-/* ---------- STATE ---------- */
 let tabs = JSON.parse(localStorage.getItem("tabs") || "[]");
-let activeTab = localStorage.getItem("activeTab");
+let activeTab = localStorage.getItem("activeTab") || null;
 
-/* ---------- ELEMENTS ---------- */
 const tabBar = document.getElementById("tabBar");
 const editor = document.getElementById("editor");
-const newTabName = document.getElementById("newTabName");
 
-/* ---------- SAVE ---------- */
-function saveTabs() {
+function save() {
   localStorage.setItem("tabs", JSON.stringify(tabs));
   localStorage.setItem("activeTab", activeTab);
 }
 
-/* ---------- LOAD ---------- */
-function loadTab(name) {
-  activeTab = name;
-  editor.value = localStorage.getItem("tab_" + name) || "";
-  saveTabs();
-  renderTabs();
-}
-
-/* ---------- RENDER ---------- */
 function renderTabs() {
   tabBar.innerHTML = "";
+
   tabs.forEach(name => {
-    const btn = document.createElement("button");
-    btn.textContent = name;
-    if (name === activeTab) btn.classList.add("active");
-    btn.onclick = () => loadTab(name);
-    tabBar.appendChild(btn);
+    const tab = document.createElement("div");
+    tab.className = "tab" + (name === activeTab ? " active" : "");
+
+    const label = document.createElement("span");
+    label.textContent = name;
+    label.onclick = () => switchTab(name);
+
+    const del = document.createElement("button");
+    del.textContent = "✕";
+    del.onclick = () => deleteTab(name);
+
+    tab.appendChild(label);
+    tab.appendChild(del);
+    tabBar.appendChild(tab);
   });
+
+  if (activeTab) {
+    editor.value = localStorage.getItem("tab_" + activeTab) || "";
+  } else {
+    editor.value = "";
+  }
 }
 
-/* ---------- ADD TAB ---------- */
-document.getElementById("addTabBtn").onclick = () => {
-  const name = newTabName.value.trim();
+function addTab() {
+  const input = document.getElementById("newTabName");
+  const name = input.value.trim();
   if (!name || tabs.includes(name)) return;
 
   tabs.push(name);
   activeTab = name;
-  localStorage.setItem("tab_" + name, "");
-  newTabName.value = "";
-
-  saveTabs();
+  save();
+  input.value = "";
   renderTabs();
-  editor.value = "";
-};
+}
 
-/* ---------- AUTOSAVE ---------- */
+function switchTab(name) {
+  if (activeTab) {
+    localStorage.setItem("tab_" + activeTab, editor.value);
+  }
+  activeTab = name;
+  save();
+  renderTabs();
+}
+
+function deleteTab(name) {
+  if (activeTab === name) {
+    editor.value = "";
+    activeTab = null;
+  }
+  tabs = tabs.filter(t => t !== name);
+  localStorage.removeItem("tab_" + name);
+  save();
+  renderTabs();
+}
+
 editor.addEventListener("input", () => {
   if (activeTab) {
     localStorage.setItem("tab_" + activeTab, editor.value);
   }
 });
 
-/* ---------- EXPORT ---------- */
-document.getElementById("exportBtn").onclick = () => {
-  let out = "";
+function exportAll() {
+  let text = "";
   tabs.forEach(t => {
-    out += "=== " + t + " ===\n";
-    out += (localStorage.getItem("tab_" + t) || "") + "\n\n";
+    text += "=== " + t + " ===\n";
+    text += (localStorage.getItem("tab_" + t) || "") + "\n\n";
   });
 
-  const blob = new Blob([out], { type: "text/plain" });
+  const blob = new Blob([text], { type: "text/plain" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = "journal.txt";
   a.click();
-};
-
-/* ---------- INIT ---------- */
-if (tabs.length === 0) {
-  tabs.push("Journal");
-  activeTab = "Journal";
-  saveTabs();
 }
 
-loadTab(activeTab);
+renderTabs();
 </script>
 
 </body>
