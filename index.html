@@ -2,103 +2,53 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Cloud Writer</title>
+<title>Offline Journal</title>
 <style>
 body { margin:0; font-family:sans-serif; background:#121212; color:#eee; }
-#login, #app { padding:10px; display:flex; flex-direction:column; gap:6px; }
-input, button, select { background:#222; color:#eee; border:none; padding:6px; border-radius:4px; }
-button, select { cursor:pointer; }
-textarea { width:95%; height:300px; background:#222; color:#eee; border:none; padding:10px; margin-top:10px; resize:none; }
+#tabBar { display:flex; gap:5px; padding:10px; flex-wrap:wrap; }
+.tab { background:#333; padding:5px 8px; border-radius:4px; cursor:pointer; }
+.tab.active { background:#007acc; }
+button { background:#222; color:#eee; border:none; padding:6px; border-radius:4px; cursor:pointer; }
+textarea { width:95%; height:300px; background:#222; color:#eee; border:none; padding:10px; margin:10px; resize:none; }
 </style>
 </head>
 <body>
 
-<div id="login">
-  <input id="username" placeholder="Enter username">
-  <button id="loginBtn">Enter</button>
-</div>
+<div id="tabBar"></div>
+<button onclick="addTab()">+ Tab</button>
+<button onclick="deleteTab()">Delete Tab</button>
+<textarea id="editor" oninput="saveEditor()"></textarea>
 
-<div id="app" style="display:none;">
-  <label for="tabSelect">Select Tab:</label>
-  <select id="tabSelect" onchange="switchTab()"></select>
-  <div style="margin-top:5px;">
-    <button onclick="addTab()">+ Tab</button>
-    <button onclick="deleteTab()">Delete Tab</button>
-    <button onclick="logout()">Logout</button>
-  </div>
-  <textarea id="editor" oninput="saveEditor()"></textarea>
-</div>
-
-<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 <script>
-const SUPABASE_URL = "https://nsjaqhhizizymomhkfaa.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5zamFxaGhpeml6eW1vbWhrZmFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg3NDUxMjMsImV4cCI6MjA4NDMyMTEyM30.Mex42yJx5xEOHfLzVNZweCnbCEmWyTPLWPziznBpeks"; // <-- replace with your anon key
-const client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let journal = JSON.parse(localStorage.getItem('journal')||'{"tabs":["Journal"],"active":"Journal","Journal":""}');
+const tabBar = document.getElementById("tabBar");
+const editor = document.getElementById("editor");
 
-let user=null, journal={tabs:[], active:null};
-
-// --- LOGIN ---
-const usernameInput = document.getElementById("username");
-const loginBtn = document.getElementById("loginBtn");
-loginBtn.addEventListener("click", login);
-
-async function login() {
-  const name = usernameInput.value.trim();
-  if(!name) return;
-
-  let { data } = await client.from("journals").select("*").eq("username", name).single();
-
-  if(!data){
-    let res = await client.from("journals")
-      .insert({username:name, data:{tabs:["Journal"], active:"Journal"}})
-      .select().single();
-    user = res.data; 
-    journal = res.data.data;
-  } else {
-    user = data;
-    if(!user.data) {
-      user.data = {tabs:["Journal"], active:"Journal"};
-      await client.from("journals").update({data:user.data}).eq("username", name);
-    }
-    journal = user.data;
-  }
-
-  document.getElementById("login").style.display="none";
-  document.getElementById("app").style.display="flex";
-  updateTabSelect();
-}
-
-// --- TAB HANDLING ---
-const tabSelect = document.getElementById("tabSelect");
-
-function updateTabSelect(){
-  tabSelect.innerHTML = "";
-  journal.tabs.forEach(t => {
-    const opt = document.createElement("option");
-    opt.value = t;
-    opt.textContent = t;
-    if(t === journal.active) opt.selected = true;
-    tabSelect.appendChild(opt);
+function renderTabs(){
+  tabBar.innerHTML="";
+  journal.tabs.forEach(t=>{
+    const div=document.createElement("div");
+    div.className="tab"+(journal.active===t?" active":"");
+    div.textContent=t;
+    div.onclick=()=>openTab(t);
+    tabBar.appendChild(div);
   });
-  if(journal.active) loadEditor(journal.active);
+  editor.value = journal[journal.active] || "";
 }
 
-function switchTab(){
+function openTab(name){
   saveCurrent();
-  journal.active = tabSelect.value;
-  loadEditor(journal.active);
-}
-
-function loadEditor(tabName){
-  document.getElementById("editor").value = journal[tabName] || "";
+  journal.active=name;
+  editor.value = journal[name] || "";
+  renderTabs();
 }
 
 function addTab(){
-  const name = "Tab " + (journal.tabs.length + 1);
+  const name="Tab "+(journal.tabs.length+1);
   journal.tabs.push(name);
-  journal[name] = "";
-  journal.active = name;
-  updateTabSelect();
+  journal[name]="";
+  journal.active=name;
+  renderTabs();
   saveJournal();
 }
 
@@ -108,40 +58,15 @@ function deleteTab(){
   if(idx!==-1) journal.tabs.splice(idx,1);
   delete journal[journal.active];
   journal.active = journal.tabs[0] || null;
-  updateTabSelect();
+  renderTabs();
   saveJournal();
 }
 
-// --- EDITOR ---
-function saveCurrent(){
-  if(journal.active) journal[journal.active] = document.getElementById("editor").value;
-}
+function saveCurrent(){ if(journal.active) journal[journal.active]=editor.value; }
+function saveEditor(){ saveCurrent(); saveJournal(); }
+function saveJournal(){ localStorage.setItem('journal', JSON.stringify(journal)); }
 
-let timeout;
-function saveEditor(){
-  saveCurrent();
-  if(timeout) clearTimeout(timeout);
-  timeout = setTimeout(saveJournal,500);
-}
-
-// --- SAVE TO SUPABASE ---
-async function saveJournal(){
-  if(!user) return;
-  await client.from("journals").update({data:journal}).eq("username", user.username);
-}
-
-// --- LOGOUT ---
-function logout(){
-  saveCurrent();
-  saveJournal();
-  user=null;
-  journal={tabs:[], active:null};
-  document.getElementById("login").style.display="flex";
-  document.getElementById("app").style.display="none";
-  usernameInput.value="";
-  document.getElementById("editor").value="";
-  tabSelect.innerHTML="";
-}
+renderTabs();
 </script>
 
 </body>
