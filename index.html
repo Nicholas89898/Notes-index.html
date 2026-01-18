@@ -2,158 +2,114 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Journal</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<title>Cloud Journal</title>
 <style>
-body{margin:0;font-family:sans-serif;background:#121212;color:#eee;}
-header{padding:10px;background:#1f1f1f;display:flex;gap:6px;flex-wrap:wrap;}
-input,button{background:#222;color:#eee;border:none;padding:6px;border-radius:4px;}
-#tabBar{display:flex;gap:5px;padding:10px;background:#181818;flex-wrap:wrap;}
-.tab{background:#333;padding:5px 8px;border-radius:4px;}
-.tab.active{background:#007acc;}
-textarea{width:100%;height:75vh;background:#222;color:#eee;border:none;padding:10px;box-sizing:border-box;}
+body {
+  margin:0;
+  font-family: sans-serif;
+  background:#111;
+  color:#eee;
+}
+#login, #app { padding:10px; }
+button { margin:3px; }
+textarea {
+  width:95%;
+  height:300px;
+  background:#222;
+  color:#eee;
+}
+.tab { display:inline-block; padding:5px; background:#333; margin:2px; }
+.tab.active { background:#555; }
 </style>
 </head>
 <body>
 
-<header id="authBar">
-  <input id="email" placeholder="email">
-  <input id="password" placeholder="password" type="password">
-  <button onclick="login()">Login</button>
-  <button onclick="register()">Register</button>
-</header>
+<div id="login">
+<h3>Login</h3>
+<input id="username" placeholder="Enter username">
+<button onclick="login()">Enter</button>
+</div>
 
-<header id="appBar" style="display:none;">
-  <input id="newTabName" placeholder="New tab">
-  <button onclick="addTab()">Add</button>
-  <button onclick="logout()">Logout</button>
-</header>
+<div id="app" style="display:none;">
+<div id="tabs"></div>
+<button onclick="newTab()">+ Tab</button>
+<button onclick="deleteTab()">Delete Tab</button>
+<br><br>
+<textarea id="editor" oninput="saveEntry()"></textarea>
+</div>
 
-<div id="tabBar"></div>
-<textarea id="editor"></textarea>
-
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-/* ---------- CONFIG ---------- */
 const SUPABASE_URL = "https://nsjaqhhizizymomhkfaa.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5zamFxaGhpeml6eW1vbWhrZmFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg3NDUxMjMsImV4cCI6MjA4NDMyMTEyM30.Mex42yJx5xEOHfLzVNZweCnbCEmWyTPLWPziznBpeks";
-const supabase = supabasejs.createClient(SUPABASE_URL, SUPABASE_KEY);
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5zamFxaGhpeml6eW1vbWhrZmFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg3NDUxMjMsImV4cCI6MjA4NDMyMTEyM30.Mex42yJx5xEOHfLzVNZweCnbCEmWyTPLWPziznBpeks"; 
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-let user = null;
-let tabs=[], activeTab=null;
+let currentUser = null;
+let currentTab = null;
 
-/* ---------- AUTH ---------- */
-async function login(){
-  const email = emailInput.value;
-  const password = passwordInput.value;
-  const { data, error } = await supabase.auth.signInWithPassword({email,password});
-  if(data.user){ user=data.user; startApp(); }
-}
+async function login() {
+  const name = document.getElementById("username").value.trim();
+  if(!name) return;
 
-async function register(){
-  const email = emailInput.value;
-  const password = passwordInput.value;
-  const { data } = await supabase.auth.signUp({email,password});
-  if(data.user){ user=data.user; startApp(); }
-}
+  let { data:user } = await db.from("users").select("*").eq("username",name).single();
 
-async function logout(){
-  await supabase.auth.signOut();
-  location.reload();
-}
-
-/* ---------- LOAD ---------- */
-async function loadCloud(){
-  const { data } = await supabase
-    .from("journals")
-    .select("data")
-    .eq("user_id", user.id)
-    .single();
-
-  if(data && data.data){
-    const d = data.data;
-    tabs = d.tabs;
-    activeTab = d.activeTab;
-    tabs.forEach(t=>{
-      localStorage.setItem("tab_"+t, d.content[t]||"");
-    });
+  if(!user){
+    let res = await db.from("users").insert({username:name}).select().single();
+    user = res.data;
   }
+
+  currentUser = user;
+  document.getElementById("login").style.display="none";
+  document.getElementById("app").style.display="block";
+  loadTabs();
 }
 
-/* ---------- SAVE ---------- */
-async function saveCloud(){
-  const payload = {tabs, activeTab, content:{}};
+async function loadTabs(){
+  const { data:tabs } = await db.from("tabs").select("*").eq("user_id",currentUser.id);
+  const div = document.getElementById("tabs");
+  div.innerHTML="";
   tabs.forEach(t=>{
-    payload.content[t]=localStorage.getItem("tab_"+t)||"";
+    const b=document.createElement("div");
+    b.className="tab"+(currentTab&&currentTab.id==t.id?" active":"");
+    b.textContent=t.name;
+    b.onclick=()=>openTab(t);
+    div.appendChild(b);
   });
-
-  await supabase.from("journals").upsert({
-    user_id: user.id,
-    data: payload,
-    updated_at: new Date()
-  });
+  if(tabs.length && !currentTab) openTab(tabs[0]);
 }
 
-/* ---------- UI ---------- */
-function render(){
-  tabBar.innerHTML="";
-  tabs.forEach(t=>{
-    const d=document.createElement("div");
-    d.className="tab"+(t===activeTab?" active":"");
-    d.textContent=t;
-    d.onclick=()=>switchTab(t);
-    tabBar.appendChild(d);
-  });
-  editor.value = activeTab ? localStorage.getItem("tab_"+activeTab)||"" : "";
+async function newTab(){
+  const name="Tab "+Date.now();
+  await db.from("tabs").insert({user_id:currentUser.id,name});
+  loadTabs();
 }
 
-function addTab(){
-  const name=newTabName.value.trim();
-  if(!name||tabs.includes(name))return;
-  tabs.push(name);
-  localStorage.setItem("tab_"+name,"");
-  activeTab=name;
-  newTabName.value="";
-  render(); saveCloud();
+async function deleteTab(){
+  if(!currentTab) return;
+  await db.from("entries").delete().eq("tab_id",currentTab.id);
+  await db.from("tabs").delete().eq("id",currentTab.id);
+  currentTab=null;
+  document.getElementById("editor").value="";
+  loadTabs();
 }
 
-function switchTab(name){
-  localStorage.setItem("tab_"+activeTab, editor.value);
-  activeTab=name;
-  render(); saveCloud();
+async function openTab(tab){
+  currentTab = tab;
+  loadTabs();
+  const { data:entry } = await db.from("entries").select("*").eq("tab_id",tab.id).single();
+  document.getElementById("editor").value = entry?entry.content:"";
 }
 
-editor.addEventListener("input",()=>{
-  if(activeTab){
-    localStorage.setItem("tab_"+activeTab, editor.value);
-    saveCloud();
+async function saveEntry(){
+  if(!currentTab) return;
+  const text = document.getElementById("editor").value;
+  const { data:existing } = await db.from("entries").select("*").eq("tab_id",currentTab.id).single();
+  if(existing){
+    await db.from("entries").update({content:text}).eq("id",existing.id);
+  } else {
+    await db.from("entries").insert({tab_id:currentTab.id,content:text});
   }
-});
-
-/* ---------- START ---------- */
-async function startApp(){
-  authBar.style.display="none";
-  appBar.style.display="flex";
-  await loadCloud();
-  if(tabs.length===0){
-    tabs=["Journal"];
-    activeTab="Journal";
-    localStorage.setItem("tab_Journal","");
-    await saveCloud();
-  }
-  render();
 }
-
-/* ---------- INIT ---------- */
-const emailInput=document.getElementById("email");
-const passwordInput=document.getElementById("password");
-
-supabase.auth.getUser().then(r=>{
-  if(r.data.user){
-    user=r.data.user;
-    startApp();
-  }
-});
 </script>
-
 </body>
 </html>
