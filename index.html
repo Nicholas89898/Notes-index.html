@@ -2,16 +2,13 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Cloud Journal</title>
+<title>Cloud Writer</title>
 <style>
 body { margin:0; font-family:sans-serif; background:#121212; color:#eee; }
-#login, #app { padding:10px; display:flex; gap:6px; flex-wrap:wrap; }
-input, button { background:#222; color:#eee; border:none; padding:6px; border-radius:4px; }
-button { cursor:pointer; }
-#tabBar { display:flex; gap:5px; padding:10px; flex-wrap:wrap; }
-.tab { background:#333; padding:5px 8px; border-radius:4px; cursor:pointer; }
-.tab.active { background:#007acc; }
-textarea { width:95%; height:300px; background:#222; color:#eee; border:none; padding:10px; margin:10px; resize:none; }
+#login, #app { padding:10px; display:flex; flex-direction:column; gap:6px; }
+input, button, select { background:#222; color:#eee; border:none; padding:6px; border-radius:4px; }
+button, select { cursor:pointer; }
+textarea { width:95%; height:300px; background:#222; color:#eee; border:none; padding:10px; margin-top:10px; resize:none; }
 </style>
 </head>
 <body>
@@ -22,10 +19,13 @@ textarea { width:95%; height:300px; background:#222; color:#eee; border:none; pa
 </div>
 
 <div id="app" style="display:none;">
-  <div id="tabBar"></div>
-  <button onclick="addTab()">+ Tab</button>
-  <button onclick="deleteTab()">Delete Tab</button>
-  <button onclick="logout()">Logout</button>
+  <label for="tabSelect">Select Tab:</label>
+  <select id="tabSelect" onchange="switchTab()"></select>
+  <div style="margin-top:5px;">
+    <button onclick="addTab()">+ Tab</button>
+    <button onclick="deleteTab()">Delete Tab</button>
+    <button onclick="logout()">Logout</button>
+  </div>
   <textarea id="editor" oninput="saveEditor()"></textarea>
 </div>
 
@@ -41,7 +41,6 @@ let user=null, journal={tabs:[], active:null};
 const usernameInput = document.getElementById("username");
 const loginBtn = document.getElementById("loginBtn");
 loginBtn.addEventListener("click", login);
-usernameInput.addEventListener("keydown", e=>{ if(e.key==="Enter") login(); });
 
 async function login() {
   const name = usernameInput.value.trim();
@@ -50,7 +49,6 @@ async function login() {
   let { data } = await client.from("journals").select("*").eq("username", name).single();
 
   if(!data){
-    // New user
     let res = await client.from("journals")
       .insert({username:name, data:{tabs:["Journal"], active:"Journal"}})
       .select().single();
@@ -66,38 +64,41 @@ async function login() {
   }
 
   document.getElementById("login").style.display="none";
-  document.getElementById("app").style.display="block";
-  renderTabs();
+  document.getElementById("app").style.display="flex";
+  updateTabSelect();
 }
 
-// --- TABS ---
-function renderTabs(){
-  const bar = document.getElementById("tabBar");
-  bar.innerHTML="";
-  journal.tabs.forEach(t=>{
-    const div=document.createElement("div");
-    div.className="tab"+(journal.active===t?" active":"");
-    div.textContent=t;
-    div.onclick=()=>openTab(t);
-    bar.appendChild(div);
+// --- TAB HANDLING ---
+const tabSelect = document.getElementById("tabSelect");
+
+function updateTabSelect(){
+  tabSelect.innerHTML = "";
+  journal.tabs.forEach(t => {
+    const opt = document.createElement("option");
+    opt.value = t;
+    opt.textContent = t;
+    if(t === journal.active) opt.selected = true;
+    tabSelect.appendChild(opt);
   });
-  openTab(journal.active);
+  if(journal.active) loadEditor(journal.active);
 }
 
-function openTab(name){
-  if(!name) return;
+function switchTab(){
   saveCurrent();
-  journal.active=name;
-  document.getElementById("editor").value = journal[name] || "";
-  renderTabs();
+  journal.active = tabSelect.value;
+  loadEditor(journal.active);
+}
+
+function loadEditor(tabName){
+  document.getElementById("editor").value = journal[tabName] || "";
 }
 
 function addTab(){
-  const name="Tab "+(journal.tabs.length+1);
+  const name = "Tab " + (journal.tabs.length + 1);
   journal.tabs.push(name);
-  journal[name]="";
-  journal.active=name;
-  renderTabs();
+  journal[name] = "";
+  journal.active = name;
+  updateTabSelect();
   saveJournal();
 }
 
@@ -107,29 +108,26 @@ function deleteTab(){
   if(idx!==-1) journal.tabs.splice(idx,1);
   delete journal[journal.active];
   journal.active = journal.tabs[0] || null;
-  document.getElementById("editor").value="";
-  renderTabs();
+  updateTabSelect();
   saveJournal();
 }
 
 // --- EDITOR ---
 function saveCurrent(){
-  if(journal.active){
-    journal[journal.active]=document.getElementById("editor").value;
-  }
+  if(journal.active) journal[journal.active] = document.getElementById("editor").value;
 }
 
 let timeout;
 function saveEditor(){
   saveCurrent();
   if(timeout) clearTimeout(timeout);
-  timeout=setTimeout(saveJournal,500);
+  timeout = setTimeout(saveJournal,500);
 }
 
 // --- SAVE TO SUPABASE ---
 async function saveJournal(){
   if(!user) return;
-  await client.from("journals").update({data:journal}).eq("username",user.username);
+  await client.from("journals").update({data:journal}).eq("username", user.username);
 }
 
 // --- LOGOUT ---
@@ -137,12 +135,12 @@ function logout(){
   saveCurrent();
   saveJournal();
   user=null;
-  journal={tabs:[],active:null};
+  journal={tabs:[], active:null};
   document.getElementById("login").style.display="flex";
   document.getElementById("app").style.display="none";
   usernameInput.value="";
   document.getElementById("editor").value="";
-  document.getElementById("tabBar").innerHTML="";
+  tabSelect.innerHTML="";
 }
 </script>
 
