@@ -1,200 +1,121 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="UTF-8">
 <title>Journal</title>
-
 <style>
-body {
-  margin: 0;
-  font-family: sans-serif;
-  background: #121212;
-  color: #eee;
-}
-
-header {
-  padding: 10px;
-  background: #1f1f1f;
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-header input {
-  padding: 6px;
-  border-radius: 4px;
-  border: none;
-  background: #222;
-  color: #eee;
-}
-
-header button {
-  padding: 6px 10px;
-  border: none;
-  border-radius: 4px;
-  background: #333;
-  color: #eee;
-  cursor: pointer;
-}
-
-header button:hover {
-  background: #444;
-}
-
-#tabBar {
-  display: flex;
-  gap: 5px;
-  padding: 10px;
-  background: #181818;
-  flex-wrap: wrap;
-}
-
-.tab {
-  background: #333;
-  padding: 5px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.tab.active {
-  background: #007acc;
-}
-
-.tab span {
-  font-size: 14px;
-}
-
-.tab button {
-  background: none;
-  border: none;
-  color: #ccc;
-  cursor: pointer;
-  font-size: 14px;
-}
-
-.tab button:hover {
-  color: #fff;
-}
-
-textarea {
-  width: 100%;
-  height: calc(100vh - 120px);
-  border: none;
-  padding: 10px;
-  background: #222;
-  color: #eee;
-  resize: none;
-  box-sizing: border-box;
-}
+body {margin:0;font-family:sans-serif;background:#121212;color:#eee;}
+header{padding:10px;background:#1f1f1f;display:flex;gap:6px;flex-wrap:wrap;}
+input,button{background:#222;color:#eee;border:none;padding:6px;border-radius:4px;}
+#tabBar{display:flex;gap:5px;padding:10px;background:#181818;flex-wrap:wrap;}
+.tab{background:#333;padding:5px 8px;border-radius:4px;display:flex;gap:6px;}
+.tab.active{background:#007acc;}
+textarea{width:100%;height:75vh;background:#222;color:#eee;border:none;padding:10px;box-sizing:border-box;}
 </style>
 </head>
-
 <body>
 
 <header>
-  <input id="newTabName" placeholder="New tab name">
-  <button onclick="addTab()">Add Tab</button>
-  <button onclick="exportAll()">Export</button>
+<input id="newTabName" placeholder="New tab name">
+<button onclick="addTab()">Add Tab</button>
+<button onclick="exportSave()">Export Save</button>
+<button onclick="loadFromGist()">Load Cloud</button>
 </header>
 
 <div id="tabBar"></div>
 <textarea id="editor"></textarea>
 
 <script>
-let tabs = JSON.parse(localStorage.getItem("tabs") || "[]");
-let activeTab = localStorage.getItem("activeTab") || null;
+const GIST_URL = "https://gist.githubusercontent.com/Nicholas89898/a71e7c731c276ffacf1e91b7ec30a312/raw/530cc61dd062c9b51c86755404e668eb4b34caec/journal.save";
 
-const tabBar = document.getElementById("tabBar");
-const editor = document.getElementById("editor");
+let tabs=[], activeTab=null;
 
-function save() {
-  localStorage.setItem("tabs", JSON.stringify(tabs));
-  localStorage.setItem("activeTab", activeTab);
+function saveLocal(){
+  localStorage.setItem("tabs",JSON.stringify(tabs));
+  localStorage.setItem("activeTab",activeTab);
 }
 
-function renderTabs() {
-  tabBar.innerHTML = "";
-
-  tabs.forEach(name => {
-    const tab = document.createElement("div");
-    tab.className = "tab" + (name === activeTab ? " active" : "");
-
-    const label = document.createElement("span");
-    label.textContent = name;
-    label.onclick = () => switchTab(name);
-
-    const del = document.createElement("button");
-    del.textContent = "✕";
-    del.onclick = () => deleteTab(name);
-
-    tab.appendChild(label);
-    tab.appendChild(del);
-    tabBar.appendChild(tab);
+function render(){
+  const bar=document.getElementById("tabBar");
+  bar.innerHTML="";
+  tabs.forEach(name=>{
+    const d=document.createElement("div");
+    d.className="tab"+(name===activeTab?" active":"");
+    const s=document.createElement("span");
+    s.textContent=name;
+    s.onclick=()=>switchTab(name);
+    d.appendChild(s);
+    bar.appendChild(d);
   });
-
-  if (activeTab) {
-    editor.value = localStorage.getItem("tab_" + activeTab) || "";
-  } else {
-    editor.value = "";
-  }
+  editor.value= activeTab ? (localStorage.getItem("tab_"+activeTab)||"") : "";
 }
 
-function addTab() {
-  const input = document.getElementById("newTabName");
-  const name = input.value.trim();
-  if (!name || tabs.includes(name)) return;
-
+function addTab(){
+  const inp=document.getElementById("newTabName");
+  const name=inp.value.trim();
+  if(!name || tabs.includes(name))return;
   tabs.push(name);
-  activeTab = name;
-  save();
-  input.value = "";
-  renderTabs();
+  localStorage.setItem("tab_"+name,"");
+  activeTab=name;
+  inp.value="";
+  saveLocal(); render();
 }
 
-function switchTab(name) {
-  if (activeTab) {
-    localStorage.setItem("tab_" + activeTab, editor.value);
+function switchTab(name){
+  if(activeTab){
+    localStorage.setItem("tab_"+activeTab,editor.value);
   }
-  activeTab = name;
-  save();
-  renderTabs();
+  activeTab=name;
+  saveLocal(); render();
 }
 
-function deleteTab(name) {
-  if (activeTab === name) {
-    editor.value = "";
-    activeTab = null;
-  }
-  tabs = tabs.filter(t => t !== name);
-  localStorage.removeItem("tab_" + name);
-  save();
-  renderTabs();
-}
-
-editor.addEventListener("input", () => {
-  if (activeTab) {
-    localStorage.setItem("tab_" + activeTab, editor.value);
+editor.addEventListener("input",()=>{
+  if(activeTab){
+    localStorage.setItem("tab_"+activeTab,editor.value);
   }
 });
 
-function exportAll() {
-  let text = "";
-  tabs.forEach(t => {
-    text += "=== " + t + " ===\n";
-    text += (localStorage.getItem("tab_" + t) || "") + "\n\n";
-  });
-
-  const blob = new Blob([text], { type: "text/plain" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "journal.txt";
+/* -------- EXPORT -------- */
+function exportSave(){
+  const data={tabs,activeTab,content:{}};
+  tabs.forEach(t=>data.content[t]=localStorage.getItem("tab_"+t)||"");
+  const blob=new Blob([JSON.stringify(data)],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="journal.save";
   a.click();
 }
 
-renderTabs();
+/* -------- LOAD FROM GIST -------- */
+async function loadFromGist(){
+  try{
+    const r=await fetch(GIST_URL);
+    const txt=await r.text();
+    const data=JSON.parse(txt||"{}");
+    if(!data.tabs)return;
+    tabs=data.tabs;
+    activeTab=data.activeTab;
+    tabs.forEach(t=>{
+      localStorage.setItem("tab_"+t,data.content[t]||"");
+    });
+    saveLocal(); render();
+  }catch(e){}
+}
+
+/* -------- INIT -------- */
+loadFromGist().then(()=>{
+  const localTabs=JSON.parse(localStorage.getItem("tabs")||"[]");
+  if(localTabs.length){
+    tabs=localTabs;
+    activeTab=localStorage.getItem("activeTab");
+  }
+  if(tabs.length===0){
+    tabs=["Journal"];
+    activeTab="Journal";
+    localStorage.setItem("tab_Journal","");
+  }
+  render();
+});
 </script>
 
 </body>
