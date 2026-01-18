@@ -4,111 +4,143 @@
 <meta charset="UTF-8">
 <title>Cloud Journal</title>
 <style>
-body {
-  margin:0;
-  font-family: sans-serif;
-  background:#111;
-  color:#eee;
-}
-#login, #app { padding:10px; }
-button { margin:3px; }
-textarea {
-  width:95%;
-  height:300px;
-  background:#222;
-  color:#eee;
-}
-.tab { display:inline-block; padding:5px; background:#333; margin:2px; }
-.tab.active { background:#555; }
+body { margin:0; font-family:sans-serif; background:#121212; color:#eee; }
+header, #login { padding:10px; display:flex; gap:6px; flex-wrap:wrap; }
+input, button { background:#222; color:#eee; border:none; padding:6px; border-radius:4px; }
+button { cursor:pointer; }
+#tabBar { display:flex; gap:5px; padding:10px; background:#181818; flex-wrap:wrap; }
+.tab { background:#333; padding:5px 8px; border-radius:4px; cursor:pointer; }
+.tab.active { background:#007acc; }
+textarea { width:95%; height:300px; background:#222; color:#eee; border:none; padding:10px; box-sizing:border-box; margin:10px; resize:none; }
 </style>
 </head>
 <body>
 
 <div id="login">
-<h3>Login</h3>
-<input id="username" placeholder="Enter username">
-<button onclick="login()">Enter</button>
+  <input id="username" placeholder="Enter username">
+  <button id="loginBtn">Enter</button>
 </div>
 
 <div id="app" style="display:none;">
-<div id="tabs"></div>
-<button onclick="newTab()">+ Tab</button>
-<button onclick="deleteTab()">Delete Tab</button>
-<br><br>
-<textarea id="editor" oninput="saveEntry()"></textarea>
+  <div id="tabBar"></div>
+  <button onclick="newTab()">+ Tab</button>
+  <button onclick="deleteTab()">Delete Tab</button>
+  <button onclick="logout()">Logout</button>
+  <textarea id="editor" placeholder="Write here..." oninput="saveEntry()"></textarea>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 <script>
 const SUPABASE_URL = "https://nsjaqhhizizymomhkfaa.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5zamFxaGhpeml6eW1vbWhrZmFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg3NDUxMjMsImV4cCI6MjA4NDMyMTEyM30.Mex42yJx5xEOHfLzVNZweCnbCEmWyTPLWPziznBpeks"; 
-const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5zamFxaGhpeml6eW1vbWhrZmFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg3NDUxMjMsImV4cCI6MjA4NDMyMTEyM30.Mex42yJx5xEOHfLzVNZweCnbCEmWyTPLWPziznBpeks"; // replace with your anon key
+const supabase = supabasejs.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-let currentUser = null;
+let user = null;
+let tabs = [];
 let currentTab = null;
 
+// ---------- LOGIN ----------
+const usernameInput = document.getElementById("username");
+const loginBtn = document.getElementById("loginBtn");
+
+loginBtn.addEventListener("click", login);
+usernameInput.addEventListener("keydown", (e)=>{ if(e.key==="Enter") login(); });
+
 async function login() {
-  const name = document.getElementById("username").value.trim();
+  const name = usernameInput.value.trim();
   if(!name) return;
 
-  let { data:user } = await db.from("users").select("*").eq("username",name).single();
-
-  if(!user){
-    let res = await db.from("users").insert({username:name}).select().single();
-    user = res.data;
+  let { data: existingUser } = await supabase.from("users").select("*").eq("username", name).single();
+  if(!existingUser) {
+    let { data: newUser } = await supabase.from("users").insert({username:name}).select().single();
+    existingUser = newUser;
   }
 
-  currentUser = user;
+  user = existingUser;
   document.getElementById("login").style.display="none";
   document.getElementById("app").style.display="block";
-  loadTabs();
+  await loadTabs();
 }
 
-async function loadTabs(){
-  const { data:tabs } = await db.from("tabs").select("*").eq("user_id",currentUser.id);
-  const div = document.getElementById("tabs");
-  div.innerHTML="";
+// ---------- LOAD TABS ----------
+async function loadTabs() {
+  const { data: userTabs } = await supabase.from("tabs").select("*").eq("user_id", user.id);
+  tabs = userTabs || [];
+  if(tabs.length>0) {
+    openTab(tabs[0]);
+  }
+  renderTabs();
+}
+
+// ---------- RENDER TABS ----------
+function renderTabs() {
+  const bar = document.getElementById("tabBar");
+  bar.innerHTML = "";
   tabs.forEach(t=>{
-    const b=document.createElement("div");
-    b.className="tab"+(currentTab&&currentTab.id==t.id?" active":"");
-    b.textContent=t.name;
-    b.onclick=()=>openTab(t);
-    div.appendChild(b);
+    const div = document.createElement("div");
+    div.className = "tab" + (currentTab && currentTab.id===t.id?" active":"");
+    div.textContent = t.name;
+    div.onclick = ()=>openTab(t);
+    bar.appendChild(div);
   });
-  if(tabs.length && !currentTab) openTab(tabs[0]);
 }
 
-async function newTab(){
-  const name="Tab "+Date.now();
-  await db.from("tabs").insert({user_id:currentUser.id,name});
-  loadTabs();
-}
-
-async function deleteTab(){
-  if(!currentTab) return;
-  await db.from("entries").delete().eq("tab_id",currentTab.id);
-  await db.from("tabs").delete().eq("id",currentTab.id);
-  currentTab=null;
-  document.getElementById("editor").value="";
-  loadTabs();
-}
-
-async function openTab(tab){
+// ---------- OPEN TAB ----------
+async function openTab(tab) {
   currentTab = tab;
-  loadTabs();
-  const { data:entry } = await db.from("entries").select("*").eq("tab_id",tab.id).single();
-  document.getElementById("editor").value = entry?entry.content:"";
+  renderTabs();
+  const { data: entry } = await supabase.from("entries").select("*").eq("tab_id", tab.id).single();
+  document.getElementById("editor").value = entry ? entry.content : "";
 }
 
-async function saveEntry(){
+// ---------- ADD TAB ----------
+async function newTab() {
+  const name = "Tab " + (tabs.length + 1);
+  const { data: newTab } = await supabase.from("tabs").insert({user_id:user.id, name}).select().single();
+  tabs.push(newTab);
+  openTab(newTab);
+}
+
+// ---------- DELETE TAB ----------
+async function deleteTab() {
+  if(!currentTab) return;
+  await supabase.from("entries").delete().eq("tab_id", currentTab.id);
+  await supabase.from("tabs").delete().eq("id", currentTab.id);
+  tabs = tabs.filter(t=>t.id!==currentTab.id);
+  currentTab = tabs[0] || null;
+  document.getElementById("editor").value = "";
+  renderTabs();
+  if(currentTab) openTab(currentTab);
+}
+
+// ---------- SAVE ENTRY ----------
+let saveTimeout = null;
+function saveEntry() {
   if(!currentTab) return;
   const text = document.getElementById("editor").value;
-  const { data:existing } = await db.from("entries").select("*").eq("tab_id",currentTab.id).single();
-  if(existing){
-    await db.from("entries").update({content:text}).eq("id",existing.id);
-  } else {
-    await db.from("entries").insert({tab_id:currentTab.id,content:text});
-  }
+
+  // Debounce save to reduce API calls
+  if(saveTimeout) clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(async ()=>{
+    const { data: existing } = await supabase.from("entries").select("*").eq("tab_id", currentTab.id).single();
+    if(existing){
+      await supabase.from("entries").update({content:text}).eq("id",existing.id);
+    } else {
+      await supabase.from("entries").insert({tab_id:currentTab.id, content:text});
+    }
+  }, 500);
+}
+
+// ---------- LOGOUT ----------
+function logout() {
+  user = null;
+  currentTab = null;
+  tabs = [];
+  document.getElementById("app").style.display="none";
+  document.getElementById("login").style.display="flex";
+  usernameInput.value="";
+  document.getElementById("editor").value="";
+  document.getElementById("tabBar").innerHTML="";
 }
 </script>
 </body>
